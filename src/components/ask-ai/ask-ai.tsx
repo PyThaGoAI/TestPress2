@@ -222,7 +222,6 @@ function AskAI({
                      console.error("[AI Response] Stream ended with incomplete diff block:", finalRemaining);
                      toast.error("AI response ended with an incomplete change block.");
                  }
-                 setDiffBuffer(""); // Clear state buffer
             }
              // Final update for full HTML mode
              if (responseType === 'full') {
@@ -253,7 +252,6 @@ function AskAI({
             currentDiffBuffer += chunk;
             const remaining = processDiffBuffer(currentDiffBuffer, editorRef.current);
             currentDiffBuffer = remaining; // Update local buffer with unprocessed part
-            setDiffBuffer(currentDiffBuffer); // Update state for potential display/debugging
           } else {
             // --- Full HTML Mode ---
             fullContentResponse += chunk;
