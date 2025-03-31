@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import { createRepo, uploadFiles, whoAmI } from "@huggingface/hub";
 import { InferenceClient } from "@huggingface/inference";
 import bodyParser from "body-parser";
-import { diff_match_patch } from 'diff-match-patch'; // Using a library for robustness
+import { diff_match_patch } from "diff-match-patch"; // Using a library for robustness
 
 import checkUser from "./middlewares/checkUser.js";
 
@@ -27,7 +27,7 @@ const MODEL_ID = "deepseek-ai/DeepSeek-V3-0324";
 const MAX_REQUESTS_PER_IP = 4; // Increased limit for testing diffs
 
 app.use(cookieParser());
-app.use(bodyParser.json({ limit: '10mb' })); // Increase limit if HTML gets large
+app.use(bodyParser.json({ limit: "10mb" })); // Increase limit if HTML gets large
 app.use(express.static(path.join(__dirname, "dist")));
 
 app.get("/api/login", (_req, res) => {
@@ -174,7 +174,6 @@ Check out the configuration reference at https://huggingface.co/docs/hub/spaces-
   }
 });
 
-
 // --- Diff Parsing and Applying Logic ---
 
 const SEARCH_START = "<<<<<<< SEARCH";
@@ -187,51 +186,56 @@ const REPLACE_END = ">>>>>>> REPLACE";
  * @returns {Array<{original: string, updated: string}>} - Array of diff blocks.
  */
 function parseDiffBlocks(content) {
-    const blocks = [];
-    const lines = content.split('\n');
-    let i = 0;
-    while (i < lines.length) {
-        // Trim lines for comparison to handle potential trailing whitespace from AI
-        if (lines[i].trim() === SEARCH_START) {
-            const originalLines = [];
-            const updatedLines = [];
-            i++; // Move past SEARCH_START
-            while (i < lines.length && lines[i].trim() !== DIVIDER) {
-                originalLines.push(lines[i]);
-                i++;
-            }
-            if (i >= lines.length || lines[i].trim() !== DIVIDER) {
-                console.warn("Malformed diff block: Missing or misplaced '=======' after SEARCH block. Block content:", originalLines.join('\n'));
-                // Skip to next potential block start or end
-                while (i < lines.length && !lines[i].includes(SEARCH_START)) i++;
-                continue;
-            }
-            i++; // Move past DIVIDER
-            while (i < lines.length && lines[i].trim() !== REPLACE_END) {
-                updatedLines.push(lines[i]);
-                i++;
-            }
-             if (i >= lines.length || lines[i].trim() !== REPLACE_END) {
-                console.warn("Malformed diff block: Missing or misplaced '>>>>>>> REPLACE' after REPLACE block. Block content:", updatedLines.join('\n'));
-                 // Skip to next potential block start or end
-                while (i < lines.length && !lines[i].includes(SEARCH_START)) i++;
-                continue;
-            }
-            // Important: Re-add newline characters lost during split('\n')
-            // Only add trailing newline if it wasn't the *very last* line of the block content before split
-            const originalText = originalLines.join('\n');
-            const updatedText = updatedLines.join('\n');
-
-            blocks.push({
-                original: originalText, // Don't add trailing newline here, handle in apply
-                updated: updatedText
-            });
-        }
+  const blocks = [];
+  const lines = content.split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    // Trim lines for comparison to handle potential trailing whitespace from AI
+    if (lines[i].trim() === SEARCH_START) {
+      const originalLines = [];
+      const updatedLines = [];
+      i++; // Move past SEARCH_START
+      while (i < lines.length && lines[i].trim() !== DIVIDER) {
+        originalLines.push(lines[i]);
         i++;
-    }
-    return blocks;
-}
+      }
+      if (i >= lines.length || lines[i].trim() !== DIVIDER) {
+        console.warn(
+          "Malformed diff block: Missing or misplaced '=======' after SEARCH block. Block content:",
+          originalLines.join("\n")
+        );
+        // Skip to next potential block start or end
+        while (i < lines.length && !lines[i].includes(SEARCH_START)) i++;
+        continue;
+      }
+      i++; // Move past DIVIDER
+      while (i < lines.length && lines[i].trim() !== REPLACE_END) {
+        updatedLines.push(lines[i]);
+        i++;
+      }
+      if (i >= lines.length || lines[i].trim() !== REPLACE_END) {
+        console.warn(
+          "Malformed diff block: Missing or misplaced '>>>>>>> REPLACE' after REPLACE block. Block content:",
+          updatedLines.join("\n")
+        );
+        // Skip to next potential block start or end
+        while (i < lines.length && !lines[i].includes(SEARCH_START)) i++;
+        continue;
+      }
+      // Important: Re-add newline characters lost during split('\n')
+      // Only add trailing newline if it wasn't the *very last* line of the block content before split
+      const originalText = originalLines.join("\n");
+      const updatedText = updatedLines.join("\n");
 
+      blocks.push({
+        original: originalText, // Don't add trailing newline here, handle in apply
+        updated: updatedText,
+      });
+    }
+    i++;
+  }
+  return blocks;
+}
 
 /**
  * Applies a single diff block to the current HTML content using diff-match-patch.
@@ -241,54 +245,66 @@ function parseDiffBlocks(content) {
  * @returns {string | null} - The updated HTML content, or null if patching failed.
  */
 function applySingleDiffFuzzy(currentHtml, originalBlock, updatedBlock) {
-    const dmp = new diff_match_patch();
+  const dmp = new diff_match_patch();
 
-    // Handle potential trailing newline inconsistencies between AI and actual file
-    // If originalBlock doesn't end with newline but exists in currentHtml *with* one, add it.
-    let searchBlock = originalBlock;
-    if (!originalBlock.endsWith('\n') && currentHtml.includes(originalBlock + '\n')) {
-        searchBlock = originalBlock + '\n';
+  // Handle potential trailing newline inconsistencies between AI and actual file
+  // If originalBlock doesn't end with newline but exists in currentHtml *with* one, add it.
+  let searchBlock = originalBlock;
+  if (
+    !originalBlock.endsWith("\n") &&
+    currentHtml.includes(originalBlock + "\n")
+  ) {
+    searchBlock = originalBlock + "\n";
+  }
+  // If updatedBlock is meant to replace a block ending in newline, ensure it also does (unless empty)
+  let replaceBlock = updatedBlock;
+  if (
+    searchBlock.endsWith("\n") &&
+    updatedBlock.length > 0 &&
+    !updatedBlock.endsWith("\n")
+  ) {
+    replaceBlock = updatedBlock + "\n";
+  }
+  // If deleting a block ending in newline, the replacement is empty
+  if (searchBlock.endsWith("\n") && updatedBlock.length === 0) {
+    replaceBlock = "";
+  }
+
+  // 1. Create a patch from the (potentially adjusted) original and updated blocks
+  const patchText = dmp.patch_make(searchBlock, replaceBlock);
+
+  // 2. Apply the patch to the current HTML
+  //    diff-match-patch is good at finding the location even with slight context variations.
+  //    Increase Match_Threshold for potentially larger files or more significant context drift.
+  dmp.Match_Threshold = 0.6; // Adjust as needed (0.0 to 1.0)
+  dmp.Patch_DeleteThreshold = 0.6; // Adjust as needed
+  const [patchedHtml, results] = dmp.patch_apply(patchText, currentHtml);
+
+  // 3. Check if the patch applied successfully
+  if (results.every((result) => result === true)) {
+    return patchedHtml;
+  } else {
+    console.warn(
+      "Patch application failed using diff-match-patch. Results:",
+      results
+    );
+    // Fallback: Try exact string replacement (less robust)
+    if (currentHtml.includes(searchBlock)) {
+      console.log("Falling back to direct string replacement.");
+      // Use replace only once
+      const index = currentHtml.indexOf(searchBlock);
+      if (index !== -1) {
+        return (
+          currentHtml.substring(0, index) +
+          replaceBlock +
+          currentHtml.substring(index + searchBlock.length)
+        );
+      }
     }
-    // If updatedBlock is meant to replace a block ending in newline, ensure it also does (unless empty)
-    let replaceBlock = updatedBlock;
-     if (searchBlock.endsWith('\n') && updatedBlock.length > 0 && !updatedBlock.endsWith('\n')) {
-         replaceBlock = updatedBlock + '\n';
-     }
-     // If deleting a block ending in newline, the replacement is empty
-     if (searchBlock.endsWith('\n') && updatedBlock.length === 0) {
-         replaceBlock = "";
-     }
-
-
-    // 1. Create a patch from the (potentially adjusted) original and updated blocks
-    const patchText = dmp.patch_make(searchBlock, replaceBlock);
-
-    // 2. Apply the patch to the current HTML
-    //    diff-match-patch is good at finding the location even with slight context variations.
-    //    Increase Match_Threshold for potentially larger files or more significant context drift.
-    dmp.Match_Threshold = 0.6; // Adjust as needed (0.0 to 1.0)
-    dmp.Patch_DeleteThreshold = 0.6; // Adjust as needed
-    const [patchedHtml, results] = dmp.patch_apply(patchText, currentHtml);
-
-    // 3. Check if the patch applied successfully
-    if (results.every(result => result === true)) {
-        return patchedHtml;
-    } else {
-        console.warn("Patch application failed using diff-match-patch. Results:", results);
-        // Fallback: Try exact string replacement (less robust)
-        if (currentHtml.includes(searchBlock)) {
-             console.log("Falling back to direct string replacement.");
-             // Use replace only once
-             const index = currentHtml.indexOf(searchBlock);
-             if (index !== -1) {
-                 return currentHtml.substring(0, index) + replaceBlock + currentHtml.substring(index + searchBlock.length);
-             }
-        }
-        console.error("Direct string replacement fallback also failed.");
-        return null; // Indicate failure
-    }
+    console.error("Direct string replacement fallback also failed.");
+    return null; // Indicate failure
+  }
 }
-
 
 /**
  * Applies all parsed diff blocks sequentially to the original HTML.
@@ -298,68 +314,93 @@ function applySingleDiffFuzzy(currentHtml, originalBlock, updatedBlock) {
  * @throws {Error} If any diff block fails to apply.
  */
 function applyDiffs(originalHtml, aiResponseContent) {
-    const diffBlocks = parseDiffBlocks(aiResponseContent);
+  const diffBlocks = parseDiffBlocks(aiResponseContent);
 
-    if (diffBlocks.length === 0) {
-        console.warn("AI response did not contain valid SEARCH/REPLACE blocks.");
-        // Check if the AI *tried* to use the format but failed, or just gave full code
-        if (aiResponseContent.includes(SEARCH_START) || aiResponseContent.includes(DIVIDER) || aiResponseContent.includes(REPLACE_END)) {
-             throw new Error("AI response contained malformed or unparseable diff blocks. Could not apply changes.");
-        }
-        // If no diff blocks *at all*, maybe the AI ignored the instruction and gave full code?
-        // Heuristic: If the response looks like a full HTML doc, use it directly.
-        const trimmedResponse = aiResponseContent.trim().toLowerCase();
-        if (trimmedResponse.startsWith('<!doctype html') || trimmedResponse.startsWith('<html')) {
-             console.warn("[Diff Apply] AI response seems to be full HTML despite diff instructions. Using full response as fallback.");
-             return aiResponseContent;
-        }
-        console.warn("[Diff Apply] No valid diff blocks found and response doesn't look like full HTML. Returning original HTML.");
-        return originalHtml; // Return original if no diffs and not full HTML
+  if (diffBlocks.length === 0) {
+    console.warn("AI response did not contain valid SEARCH/REPLACE blocks.");
+    // Check if the AI *tried* to use the format but failed, or just gave full code
+    if (
+      aiResponseContent.includes(SEARCH_START) ||
+      aiResponseContent.includes(DIVIDER) ||
+      aiResponseContent.includes(REPLACE_END)
+    ) {
+      throw new Error(
+        "AI response contained malformed or unparseable diff blocks. Could not apply changes."
+      );
     }
-
-    console.log(`Found ${diffBlocks.length} diff blocks to apply.`);
-    let currentHtml = originalHtml;
-    for (let i = 0; i < diffBlocks.length; i++) {
-        const { original, updated } = diffBlocks[i];
-        console.log(`Applying block ${i + 1}...`);
-        const result = applySingleDiffFuzzy(currentHtml, original, updated);
-
-        if (result === null) {
-            // Log detailed error for debugging
-            console.error(`Failed to apply diff block ${i + 1}:`);
-            console.error("--- SEARCH ---");
-            console.error(original);
-            console.error("--- REPLACE ---");
-            console.error(updated);
-            console.error("--- CURRENT CONTEXT (approx) ---");
-            // Try finding the first line of the original block for context
-            const firstLine = original.split('\n')[0];
-            let contextIndex = -1;
-            if (firstLine) {
-                contextIndex = currentHtml.indexOf(firstLine);
-            }
-             if (contextIndex === -1) { // If first line not found, maybe try middle line?
-                 const lines = original.split('\n');
-                 if (lines.length > 2) {
-                     contextIndex = currentHtml.indexOf(lines[Math.floor(lines.length / 2)]);
-                 }
-             }
-             if (contextIndex === -1) { // Still not found, just show start
-                 contextIndex = 0;
-             }
-
-            console.error(currentHtml.substring(Math.max(0, contextIndex - 150), Math.min(currentHtml.length, contextIndex + original.length + 300)));
-            console.error("---------------------------------");
-
-            throw new Error(`Failed to apply AI-suggested change ${i + 1}. The 'SEARCH' block might not accurately match the current code.`);
-        }
-        currentHtml = result;
+    // If no diff blocks *at all*, maybe the AI ignored the instruction and gave full code?
+    // Heuristic: If the response looks like a full HTML doc, use it directly.
+    const trimmedResponse = aiResponseContent.trim().toLowerCase();
+    if (
+      trimmedResponse.startsWith("<!doctype html") ||
+      trimmedResponse.startsWith("<html")
+    ) {
+      console.warn(
+        "[Diff Apply] AI response seems to be full HTML despite diff instructions. Using full response as fallback."
+      );
+      return aiResponseContent;
     }
+    console.warn(
+      "[Diff Apply] No valid diff blocks found and response doesn't look like full HTML. Returning original HTML."
+    );
+    return originalHtml; // Return original if no diffs and not full HTML
+  }
 
-    console.log("All diff blocks applied successfully.");
-    return currentHtml;
+  console.log(`Found ${diffBlocks.length} diff blocks to apply.`);
+  let currentHtml = originalHtml;
+  for (let i = 0; i < diffBlocks.length; i++) {
+    const { original, updated } = diffBlocks[i];
+    console.log(`Applying block ${i + 1}...`);
+    const result = applySingleDiffFuzzy(currentHtml, original, updated);
+
+    if (result === null) {
+      // Log detailed error for debugging
+      console.error(`Failed to apply diff block ${i + 1}:`);
+      console.error("--- SEARCH ---");
+      console.error(original);
+      console.error("--- REPLACE ---");
+      console.error(updated);
+      console.error("--- CURRENT CONTEXT (approx) ---");
+      // Try finding the first line of the original block for context
+      const firstLine = original.split("\n")[0];
+      let contextIndex = -1;
+      if (firstLine) {
+        contextIndex = currentHtml.indexOf(firstLine);
+      }
+      if (contextIndex === -1) {
+        // If first line not found, maybe try middle line?
+        const lines = original.split("\n");
+        if (lines.length > 2) {
+          contextIndex = currentHtml.indexOf(
+            lines[Math.floor(lines.length / 2)]
+          );
+        }
+      }
+      if (contextIndex === -1) {
+        // Still not found, just show start
+        contextIndex = 0;
+      }
+
+      console.error(
+        currentHtml.substring(
+          Math.max(0, contextIndex - 150),
+          Math.min(currentHtml.length, contextIndex + original.length + 300)
+        )
+      );
+      console.error("---------------------------------");
+
+      throw new Error(
+        `Failed to apply AI-suggested change ${
+          i + 1
+        }. The 'SEARCH' block might not accurately match the current code.`
+      );
+    }
+    currentHtml = result;
+  }
+
+  console.log("All diff blocks applied successfully.");
+  return currentHtml;
 }
-
 
 // --- AI Interaction Route ---
 app.post("/api/ask-ai", async (req, res) => {
@@ -372,7 +413,7 @@ app.post("/api/ask-ai", async (req, res) => {
   }
 
   const isFollowUp = !!html && !!previousPrompt; // Check if it's a follow-up request
-  console.log(`[AI Request] Type: ${isFollowUp ? 'Follow-up' : 'Initial'}`);
+  console.log(`[AI Request] Type: ${isFollowUp ? "Follow-up" : "Initial"}`);
 
   const { hf_token } = req.cookies;
   let token = hf_token;
@@ -390,7 +431,8 @@ app.post("/api/ask-ai", async (req, res) => {
       return res.status(429).send({
         ok: false,
         openLogin: true,
-        message: "Log In to continue using the service (Rate limit exceeded for anonymous users)",
+        message:
+          "Log In to continue using the service (Rate limit exceeded for anonymous users)",
       });
     }
     token = process.env.DEFAULT_HF_TOKEN;
@@ -445,8 +487,14 @@ ${REPLACE_END}
 ONLY output the changes in this format. Do NOT output the full HTML file again.`;
 
   // --- Prepare Messages for AI ---
-  const systemPromptContent = isFollowUp ? followUpSystemPrompt : initialSystemPrompt;
-  console.log(`[AI Request] Using system prompt: ${isFollowUp ? 'Follow-up (Diff)' : 'Initial (Full HTML)'}`);
+  const systemPromptContent = isFollowUp
+    ? followUpSystemPrompt
+    : initialSystemPrompt;
+  console.log(
+    `[AI Request] Using system prompt: ${
+      isFollowUp ? "Follow-up (Diff)" : "Initial (Full HTML)"
+    }`
+  );
   // console.log("[AI Request] System Prompt Content:\n", systemPromptContent); // Uncomment for full prompt text
 
   const messages = [
@@ -457,11 +505,17 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
     // Include previous context if available
     ...(previousPrompt ? [{ role: "user", content: previousPrompt }] : []),
     // Provide current code clearly ONLY if it's a follow-up
-    ...(isFollowUp && html ? [{ role: "assistant", content: `Okay, I have the current code. It is:\n\`\`\`html\n${html}\n\`\`\`` }] : []),
+    ...(isFollowUp && html
+      ? [
+          {
+            role: "assistant",
+            content: `Okay, I have the current code. It is:\n\`\`\`html\n${html}\n\`\`\``,
+          },
+        ]
+      : []),
     // Current user prompt
     { role: "user", content: prompt },
   ];
-
 
   const client = new InferenceClient(token);
   let completeResponse = "";
@@ -472,13 +526,15 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Response-Type", isFollowUp ? "diff" : "full"); // Signal type to client
-    console.log(`[AI Request] Set X-Response-Type: ${isFollowUp ? 'diff' : 'full'}`);
+    console.log(
+      `[AI Request] Set X-Response-Type: ${isFollowUp ? "diff" : "full"}`
+    );
 
     const chatCompletion = client.chatCompletionStream({
       model: MODEL_ID,
       provider: isFollowUp ? "fireworks-ai" : "sambanova", // Use sambanova for initial, fireworks for follow-up
       messages: messages,
-      max_tokens: 12_000, // Keep max_tokens reasonable
+      max_tokens: 6_000, // Keep max_tokens reasonable
       temperature: isFollowUp ? 0 : undefined, // Set temperature to 0 for follow-ups, otherwise use default
     });
 
@@ -499,17 +555,16 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
     // console.log("--------------------------");
 
     res.end(); // End the stream
-
   } catch (error) {
     console.error("Error during AI interaction:", error); // Removed "or diff application"
     // If we haven't sent headers/started streaming yet
     if (!res.headersSent) {
-       // Check if it's an AbortError which might happen if the client disconnects
-       if (error.name === 'AbortError') {
-           console.warn('Client disconnected before AI response finished.');
-           // Don't send another response if client is gone
-           return;
-       }
+      // Check if it's an AbortError which might happen if the client disconnects
+      if (error.name === "AbortError") {
+        console.warn("Client disconnected before AI response finished.");
+        // Don't send another response if client is gone
+        return;
+      }
       res.status(500).send({
         ok: false,
         // Provide a more user-friendly message, but keep details for logs
@@ -521,7 +576,7 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
       console.error("Error occurred mid-stream. Ending response.");
       res.end(); // End the stream abruptly if error occurs during streaming
     }
-     // If streaming failed *after* res.end() was called (unlikely but possible), do nothing more.
+    // If streaming failed *after* res.end() was called (unlikely but possible), do nothing more.
   }
 });
 
