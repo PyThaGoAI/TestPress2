@@ -372,6 +372,7 @@ app.post("/api/ask-ai", async (req, res) => {
   }
 
   const isFollowUp = !!html && !!previousPrompt; // Check if it's a follow-up request
+  console.log(`[AI Request] Type: ${isFollowUp ? 'Follow-up' : 'Initial'}`);
 
   const { hf_token } = req.cookies;
   let token = hf_token;
@@ -444,10 +445,14 @@ ${REPLACE_END}
 ONLY output the changes in this format. Do NOT output the full HTML file again.`;
 
   // --- Prepare Messages for AI ---
+  const systemPromptContent = isFollowUp ? followUpSystemPrompt : initialSystemPrompt;
+  console.log(`[AI Request] Using system prompt: ${isFollowUp ? 'Follow-up (Diff)' : 'Initial (Full HTML)'}`);
+  // console.log("[AI Request] System Prompt Content:\n", systemPromptContent); // Uncomment for full prompt text
+
   const messages = [
     {
       role: "system",
-      content: isFollowUp ? followUpSystemPrompt : initialSystemPrompt,
+      content: systemPromptContent,
     },
     // Include previous context if available
     ...(previousPrompt ? [{ role: "user", content: previousPrompt }] : []),
@@ -500,11 +505,14 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
 
 
       // Apply the diffs
+      console.log("[Diff Apply] Attempting to apply diffs...");
       const modifiedHtml = applyDiffs(html, completeResponse);
+      console.log("[Diff Apply] Diffs applied successfully.");
       res.status(200).type('text/html').send(modifiedHtml); // Send the fully modified HTML
 
     } else {
       // **Stream response directly (Initial Request)**
+      console.log("[AI Request] Starting direct stream for initial request.");
       res.setHeader("Content-Type", "text/html"); // Send as HTML
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
