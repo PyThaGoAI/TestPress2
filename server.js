@@ -467,6 +467,13 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
   let completeResponse = "";
 
   try {
+    // Set response type header *before* starting the stream
+    res.setHeader("Content-Type", "text/plain; charset=utf-8"); // Stream raw text
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Response-Type", isFollowUp ? "diff" : "full"); // Signal type to client
+    console.log(`[AI Request] Set X-Response-Type: ${isFollowUp ? 'diff' : 'full'}`);
+
     const chatCompletion = client.chatCompletionStream({
       model: MODEL_ID,
       provider: "fireworks-ai", // Ensure provider is correct if needed
@@ -475,70 +482,27 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
       // temperature: 0.7, // Adjust temperature if needed
     });
 
-    // --- Conditional Response Handling ---
-    if (isFollowUp) {
-      // **Accumulate response, then parse and apply diffs**
-      for await (const value of chatCompletion) {
-          const chunk = value.choices[0]?.delta?.content;
-          if (chunk) {
-              completeResponse += chunk;
-          }
-          // Optional: Add a timeout or check response length to prevent infinite loops
-          if (completeResponse.length > 50000) { // Example limit
-              console.error("AI response exceeded length limit during accumulation.");
-              throw new Error("AI response too long during accumulation.");
-          }
+    // --- Unified Streaming Logic ---
+    console.log("[AI Request] Starting stream to client...");
+    for await (const value of chatCompletion) {
+      const chunk = value.choices[0]?.delta?.content;
+      if (chunk) {
+        res.write(chunk); // Stream raw AI response chunk
+        completeResponse += chunk; // Accumulate for logging completion
       }
-
-      // Check if the response seems truncated (didn't finish properly)
-      // This is heuristic - might need refinement
-      if (!chatCompletion?.controller?.signal?.aborted && !completeResponse.trim()) {
-           console.warn("AI stream finished but response is empty.");
-           // Return original HTML as maybe no changes were needed or AI failed silently.
-           return res.status(200).type('text/html').send(html);
-      }
-
-
-      console.log("--- AI Raw Diff Response ---");
-      console.log(completeResponse);
-      console.log("--------------------------");
-
-
-      // Apply the diffs
-      console.log("[Diff Apply] Attempting to apply diffs...");
-      const modifiedHtml = applyDiffs(html, completeResponse);
-      console.log("[Diff Apply] Diffs applied successfully.");
-      res.status(200).type('text/html').send(modifiedHtml); // Send the fully modified HTML
-
-    } else {
-      // **Stream response directly (Initial Request)**
-      console.log("[AI Request] Starting direct stream for initial request.");
-      res.setHeader("Content-Type", "text/html"); // Send as HTML
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-
-      for await (const value of chatCompletion) {
-        const chunk = value.choices[0]?.delta?.content;
-        if (chunk) {
-          res.write(chunk);
-          completeResponse += chunk; // Still useful for checking completion
-        }
-      }
-
-       // Basic check if the streamed response looks like HTML
-       if (!completeResponse.trim().toLowerCase().includes("</html>")) {
-           console.warn("[AI Request] Streamed response might be incomplete or not valid HTML.");
-           // Client side might handle this, but good to log.
-       } else {
-           console.log("[AI Request] Stream finished successfully.");
-       }
-
-      res.end(); // End the stream
     }
 
+    console.log("[AI Request] Stream finished.");
+    // Log the complete raw response for debugging if needed
+    // console.log("--- AI Raw Full Response ---");
+    // console.log(completeResponse);
+    // console.log("--------------------------");
+
+    res.end(); // End the stream
+
   } catch (error) {
-    console.error("Error during AI interaction or diff application:", error);
-    // If we haven't sent a response yet (likely in diff mode or before stream start)
+    console.error("Error during AI interaction:", error); // Removed "or diff application"
+    // If we haven't sent headers/started streaming yet
     if (!res.headersSent) {
        // Check if it's an AbortError which might happen if the client disconnects
        if (error.name === 'AbortError') {
@@ -549,14 +513,14 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
       res.status(500).send({
         ok: false,
         // Provide a more user-friendly message, but keep details for logs
+        // Provide a more user-friendly message, but keep details for logs
         message: `Error processing AI request: ${error.message}. You might need to start a new conversation by refreshing the page.`,
       });
-    } else if (!isFollowUp && !res.writableEnded) {
+    } else if (!res.writableEnded) {
       // If streaming failed mid-stream and stream hasn't been ended yet
-      console.error("Error occurred mid-stream.");
+      console.error("Error occurred mid-stream. Ending response.");
       res.end(); // End the stream abruptly if error occurs during streaming
     }
-     // If diff application failed, error was already sent by applyDiffs throwing.
      // If streaming failed *after* res.end() was called (unlikely but possible), do nothing more.
   }
 });
