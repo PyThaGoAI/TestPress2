@@ -193,7 +193,8 @@ function App() {
           />
           <AskAI
             html={html}
-            setHtml={setHtml}
+            setHtml={setHtml} // Still needed for full HTML updates
+            editorRef={editorRef} // Pass the editor ref
             isAiWorking={isAiWorking}
             setisAiWorking={setisAiWorking}
             onScrollToBottom={() => {
