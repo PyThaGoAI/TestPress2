@@ -1,39 +1,182 @@
-import { useState } from "react";
+import { useState, useRef } from "react"; // Import useRef
 import { RiSparkling2Fill } from "react-icons/ri";
 import { GrSend } from "react-icons/gr";
 import classNames from "classnames";
 import { toast } from "react-toastify";
+import { editor } from "monaco-editor"; // Import editor type
 
 import Login from "../login/login";
 import { defaultHTML } from "../../utils/consts";
 import SuccessSound from "./../../assets/success.mp3";
 
 function AskAI({
-  html,
-  setHtml,
-  onScrollToBottom,
+  html, // Current full HTML content (used for initial request and context)
+  setHtml, // Used only for full updates now
+  onScrollToBottom, // Used for full updates
   isAiWorking,
   setisAiWorking,
+  editorRef, // Pass the editor instance ref
 }: {
   html: string;
   setHtml: (html: string) => void;
   onScrollToBottom: () => void;
   isAiWorking: boolean;
   setisAiWorking: React.Dispatch<React.SetStateAction<boolean>>;
+  editorRef: React.RefObject<editor.IStandaloneCodeEditor | null>; // Add editorRef prop
 }) {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [hasAsked, setHasAsked] = useState(false);
   const [previousPrompt, setPreviousPrompt] = useState("");
+  const [diffBuffer, setDiffBuffer] = useState(""); // Buffer for accumulating diff chunks
   const audio = new Audio(SuccessSound);
   audio.volume = 0.5;
 
+  // --- Diff Constants ---
+  const SEARCH_START = "<<<<<<< SEARCH";
+  const DIVIDER = "=======";
+  const REPLACE_END = ">>>>>>> REPLACE";
+
+  // --- Diff Applying Logic ---
+
+  /**
+   * Applies a single parsed diff block to the Monaco editor.
+   */
+  const applyMonacoDiff = (
+    original: string,
+    updated: string,
+    editorInstance: editor.IStandaloneCodeEditor
+  ) => {
+    const model = editorInstance.getModel();
+    if (!model) {
+      console.error("Monaco model not available for applying diff.");
+      toast.error("Editor model not found, cannot apply change.");
+      return false; // Indicate failure
+    }
+
+    // Monaco's findMatches can be sensitive. Let's try a simple search first.
+    // We need to be careful about potential regex characters in the original block.
+    // Escape basic regex characters for the search string.
+    const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    // Find the first occurrence. Might need more robust logic for multiple identical blocks.
+    const matches = model.findMatches(
+      escapedOriginal,
+      false, // isRegex
+      false, // matchCase
+      false, // wordSeparators
+      null, // searchScope
+      true, // captureMatches
+      1 // limitResultCount
+    );
+
+    if (matches.length > 0) {
+      const range = matches[0].range;
+      const editOperation = {
+        range: range,
+        text: updated,
+        forceMoveMarkers: true,
+      };
+
+      try {
+        // Use pushEditOperations for better undo/redo integration if needed,
+        // but executeEdits is simpler for direct replacement.
+        editorInstance.executeEdits("ai-diff-apply", [editOperation]);
+        // Scroll to the change
+        editorInstance.revealRangeInCenter(range, editor.ScrollType.Smooth);
+        console.log("[Diff Apply] Applied block:", { original, updated });
+        return true; // Indicate success
+      } catch (editError) {
+        console.error("Error applying edit operation:", editError);
+        toast.error(`Failed to apply change: ${editError}`);
+        return false; // Indicate failure
+      }
+    } else {
+      console.warn("Could not find SEARCH block in editor:", original);
+      // Attempt fuzzy match (simple whitespace normalization) as fallback
+      const normalizedOriginal = original.replace(/\s+/g, ' ').trim();
+      const editorContent = model.getValue();
+      const normalizedContent = editorContent.replace(/\s+/g, ' ').trim();
+      const startIndex = normalizedContent.indexOf(normalizedOriginal);
+
+      if (startIndex !== -1) {
+          console.warn("Applying diff using fuzzy whitespace match.");
+          // This is tricky - need to map normalized index back to original positions
+          // For now, let's just log and skip applying this specific block
+          toast.warn("Could not precisely locate change, skipping one diff block.");
+          // TODO: Implement more robust fuzzy matching if needed
+      } else {
+         toast.error("Could not locate the code block to change. AI might be referencing outdated code.");
+      }
+      return false; // Indicate failure
+    }
+  };
+
+  /**
+   * Processes the accumulated diff buffer, parsing and applying complete blocks.
+   */
+  const processDiffBuffer = (
+    currentBuffer: string,
+    editorInstance: editor.IStandaloneCodeEditor | null
+  ): string => {
+    if (!editorInstance) return currentBuffer; // Don't process if editor isn't ready
+
+    let remainingBuffer = currentBuffer;
+    let appliedSuccess = true;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const searchStartIndex = remainingBuffer.indexOf(SEARCH_START);
+      if (searchStartIndex === -1) break; // No more potential blocks
+
+      const dividerIndex = remainingBuffer.indexOf(DIVIDER, searchStartIndex);
+      if (dividerIndex === -1) break; // Incomplete block
+
+      const replaceEndIndex = remainingBuffer.indexOf(REPLACE_END, dividerIndex);
+      if (replaceEndIndex === -1) break; // Incomplete block
+
+      // Extract the block content
+      const originalBlockContent = remainingBuffer
+        .substring(searchStartIndex + SEARCH_START.length, dividerIndex)
+        .trimEnd(); // Trim potential trailing newline before divider
+      const updatedBlockContent = remainingBuffer
+        .substring(dividerIndex + DIVIDER.length, replaceEndIndex)
+        .trimEnd(); // Trim potential trailing newline before end marker
+
+      // Adjust for newlines potentially trimmed by .trimEnd() if they were intended
+      const original = originalBlockContent.startsWith('\n') ? originalBlockContent.substring(1) : originalBlockContent;
+      const updated = updatedBlockContent.startsWith('\n') ? updatedBlockContent.substring(1) : updatedBlockContent;
+
+
+      console.log("[Diff Parse] Found block:", { original, updated });
+
+      // Apply the diff
+      appliedSuccess = applyMonacoDiff(original, updated, editorInstance) && appliedSuccess;
+
+      // Remove the processed block from the buffer
+      remainingBuffer = remainingBuffer.substring(replaceEndIndex + REPLACE_END.length);
+    }
+
+     if (!appliedSuccess) {
+         // If any block failed, maybe stop processing further blocks in this stream?
+         // Or just let it continue and report errors per block? Let's continue for now.
+         console.warn("One or more diff blocks failed to apply.");
+     }
+
+    return remainingBuffer; // Return the part of the buffer that couldn't be processed yet
+  };
+
+
+  // --- Main AI Call Logic ---
   const callAi = async () => {
     if (isAiWorking || !prompt.trim()) return;
     setisAiWorking(true);
+    setDiffBuffer(""); // Clear buffer for new request
 
-    let contentResponse = "";
-    let lastRenderTime = 0;
+    let fullContentResponse = ""; // Used for full HTML mode
+    let lastRenderTime = 0; // For throttling full HTML updates
+    let currentDiffBuffer = ""; // Local variable for buffer within this call
+
     try {
       const request = await fetch("/api/ask-ai", {
         method: "POST",
@@ -58,58 +201,89 @@ function AskAI({
           setisAiWorking(false);
           return;
         }
+
+        const responseType = request.headers.get("X-Response-Type") || "full"; // Default to full if header missing
+        console.log(`[AI Response] Type: ${responseType}`);
+
         const reader = request.body.getReader();
         const decoder = new TextDecoder("utf-8");
 
-        const read = async () => {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            toast.success("AI responded successfully");
+            console.log("[AI Response] Stream finished.");
+            // Process any remaining buffer content in diff mode
+            if (responseType === 'diff' && currentDiffBuffer.trim()) {
+                 console.warn("[AI Response] Processing remaining diff buffer after stream end:", currentDiffBuffer);
+                 const finalRemaining = processDiffBuffer(currentDiffBuffer, editorRef.current);
+                 if (finalRemaining.trim()) {
+                     console.error("[AI Response] Stream ended with incomplete diff block:", finalRemaining);
+                     toast.error("AI response ended with an incomplete change block.");
+                 }
+                 setDiffBuffer(""); // Clear state buffer
+            }
+             // Final update for full HTML mode
+             if (responseType === 'full') {
+                 const finalDoc = fullContentResponse.match(/<!DOCTYPE html>[\s\S]*<\/html>/)?.[0];
+                 if (finalDoc) {
+                     setHtml(finalDoc); // Ensure final complete HTML is set
+                 } else if (fullContentResponse.trim()) {
+                     // If we got content but it doesn't look like HTML, maybe it's an error message or explanation?
+                     console.warn("[AI Response] Final response doesn't look like HTML:", fullContentResponse);
+                     // Decide if we should show this to the user? Maybe a toast?
+                     // For now, let's assume the throttled updates were sufficient or it wasn't HTML.
+                 }
+             }
+
+            toast.success("AI processing complete");
             setPrompt("");
             setPreviousPrompt(prompt);
             setisAiWorking(false);
             setHasAsked(true);
             audio.play();
-
-            // Now we have the complete HTML including </html>, so set it to be sure
-            const finalDoc = contentResponse.match(
-              /<!DOCTYPE html>[\s\S]*<\/html>/
-            )?.[0];
-            if (finalDoc) {
-              setHtml(finalDoc);
-            }
-
-            return;
+            break; // Exit the loop
           }
 
           const chunk = decoder.decode(value, { stream: true });
-          contentResponse += chunk;
-          const newHtml = contentResponse.match(/<!DOCTYPE html>[\s\S]*/)?.[0];
-          if (newHtml) {
-            // Force-close the HTML tag so the iframe doesn't render half-finished markup
-            let partialDoc = newHtml;
-            if (!partialDoc.includes("</html>")) {
-              partialDoc += "\n</html>";
-            }
 
-            // Throttle the re-renders to avoid flashing/flicker
-            const now = Date.now();
-            if (now - lastRenderTime > 300) {
-              setHtml(partialDoc);
-              lastRenderTime = now;
-            }
+          if (responseType === 'diff') {
+            // --- Diff Mode ---
+            currentDiffBuffer += chunk;
+            const remaining = processDiffBuffer(currentDiffBuffer, editorRef.current);
+            currentDiffBuffer = remaining; // Update local buffer with unprocessed part
+            setDiffBuffer(currentDiffBuffer); // Update state for potential display/debugging
+          } else {
+            // --- Full HTML Mode ---
+            fullContentResponse += chunk;
+            // Use regex to find the start of the HTML doc
+            const newHtmlMatch = fullContentResponse.match(/<!DOCTYPE html>[\s\S]*/);
+            const newHtml = newHtmlMatch ? newHtmlMatch[0] : null;
 
-            if (partialDoc.length > 200) {
-              onScrollToBottom();
+            if (newHtml) {
+              // Throttle the re-renders to avoid flashing/flicker
+              const now = Date.now();
+              if (now - lastRenderTime > 300) {
+                 // Force-close the HTML tag for preview if needed
+                 let partialDoc = newHtml;
+                 if (!partialDoc.trim().endsWith("</html>")) {
+                     partialDoc += "\n</html>";
+                 }
+                setHtml(partialDoc); // Update the preview iframe content
+                lastRenderTime = now;
+              }
+
+              // Scroll editor down if content is long (heuristic)
+              if (newHtml.length > 200 && now - lastRenderTime < 50) { // Only scroll if recently rendered
+                onScrollToBottom();
+              }
             }
           }
-          read();
-        };
-
-        read();
+        } // end while loop
+      } else {
+         throw new Error("Response body is null");
       }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       setisAiWorking(false);
       toast.error(error.message);
