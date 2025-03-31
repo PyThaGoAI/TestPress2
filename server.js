@@ -476,7 +476,7 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
 
     const chatCompletion = client.chatCompletionStream({
       model: MODEL_ID,
-      provider: "fireworks-ai", // Ensure provider is correct if needed
+      provider: isFollowUp ? "fireworks-ai" : "sambanova", // Use sambanova for initial, fireworks for follow-up
       messages: messages,
       max_tokens: 12_000, // Keep max_tokens reasonable
       temperature: isFollowUp ? 0 : undefined, // Set temperature to 0 for follow-ups, otherwise use default
