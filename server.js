@@ -310,10 +310,10 @@ function applyDiffs(originalHtml, aiResponseContent) {
         // Heuristic: If the response looks like a full HTML doc, use it directly.
         const trimmedResponse = aiResponseContent.trim().toLowerCase();
         if (trimmedResponse.startsWith('<!doctype html') || trimmedResponse.startsWith('<html')) {
-             console.warn("AI response seems to be full HTML despite diff instructions. Using full response.");
+             console.warn("[Diff Apply] AI response seems to be full HTML despite diff instructions. Using full response as fallback.");
              return aiResponseContent;
         }
-        console.warn("No diff blocks found and response doesn't look like full HTML. Returning original HTML.");
+        console.warn("[Diff Apply] No valid diff blocks found and response doesn't look like full HTML. Returning original HTML.");
         return originalHtml; // Return original if no diffs and not full HTML
     }
 
@@ -527,8 +527,10 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
 
        // Basic check if the streamed response looks like HTML
        if (!completeResponse.trim().toLowerCase().includes("</html>")) {
-           console.warn("Streamed response might be incomplete or not valid HTML.");
+           console.warn("[AI Request] Streamed response might be incomplete or not valid HTML.");
            // Client side might handle this, but good to log.
+       } else {
+           console.log("[AI Request] Stream finished successfully.");
        }
 
       res.end(); // End the stream
