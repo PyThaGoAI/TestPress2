@@ -135,12 +135,10 @@ function AskAI({
 
           if (responseType === 'diff') {
             // --- Diff Mode ---
-            currentDiffBuffer += chunk;
-            const remaining = processDiffBuffer(currentDiffBuffer, editorRef.current);
-            currentDiffBuffer = remaining; // Update local buffer with unprocessed part
+            accumulatedDiffResponse += chunk; // Just accumulate the raw response
           } else {
             // --- Full HTML Mode ---
-            fullContentResponse += chunk;
+            fullContentResponse += chunk; // Accumulate for preview
             // Use regex to find the start of the HTML doc
             const newHtmlMatch = fullContentResponse.match(/<!DOCTYPE html>[\s\S]*/);
             const newHtml = newHtmlMatch ? newHtmlMatch[0] : null;
