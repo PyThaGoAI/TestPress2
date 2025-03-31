@@ -417,7 +417,7 @@ app.post("/api/apply-diffs", (req, res) => {
     console.log("[Apply Diffs] Diffs applied successfully.");
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(200).send(modifiedHtml);
-  } catch (error: any) {
+  } catch (error) {
     console.error("[Apply Diffs] Error applying diffs:", error);
     res.status(400).json({ // Use 400 for client-side correctable errors (bad diff format)
       ok: false,
