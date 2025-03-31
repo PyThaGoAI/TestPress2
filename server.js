@@ -479,7 +479,7 @@ ONLY output the changes in this format. Do NOT output the full HTML file again.`
       provider: "fireworks-ai", // Ensure provider is correct if needed
       messages: messages,
       max_tokens: 12_000, // Keep max_tokens reasonable
-      // temperature: 0.7, // Adjust temperature if needed
+      temperature: isFollowUp ? 0 : undefined, // Set temperature to 0 for follow-ups, otherwise use default
     });
 
     // --- Unified Streaming Logic ---
