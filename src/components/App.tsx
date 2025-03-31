@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import classNames from "classnames";
-import { editor } from "monaco-editor";
 import { useMount, useUnmount, useEvent, useLocalStorage } from "react-use";
 import { toast } from "react-toastify";
 
