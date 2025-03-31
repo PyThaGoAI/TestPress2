@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"; // Import useRef
+import { useState } from "react"; // Removed useRef import
 import { RiSparkling2Fill } from "react-icons/ri";
 import { GrSend } from "react-icons/gr";
 import classNames from "classnames";
@@ -28,7 +28,7 @@ function AskAI({
   const [prompt, setPrompt] = useState("");
   const [hasAsked, setHasAsked] = useState(false);
   const [previousPrompt, setPreviousPrompt] = useState("");
-  const [diffBuffer, setDiffBuffer] = useState(""); // Buffer for accumulating diff chunks
+  // Removed unused diffBuffer state: const [diffBuffer, setDiffBuffer] = useState("");
   const audio = new Audio(SuccessSound);
   audio.volume = 0.5;
 
@@ -168,10 +168,11 @@ function AskAI({
 
 
   // --- Main AI Call Logic ---
+  // --- Main AI Call Logic ---
   const callAi = async () => {
     if (isAiWorking || !prompt.trim()) return;
     setisAiWorking(true);
-    setDiffBuffer(""); // Clear buffer for new request
+    // Removed setDiffBuffer("") call
 
     let fullContentResponse = ""; // Used for full HTML mode
     let lastRenderTime = 0; // For throttling full HTML updates
