@@ -19,7 +19,7 @@ function App() {
   const preview = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLDivElement>(null);
   const resizer = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  // Removed editorRef
 
   const [isResizing, setIsResizing] = useState(false);
   const [error, setError] = useState(false);
@@ -148,9 +148,7 @@ function App() {
             setHtml(defaultHTML);
             setError(false);
             removeHtmlStorage();
-            editorRef.current?.revealLine(
-              editorRef.current?.getModel()?.getLineCount() ?? 0
-            );
+            // Removed editorRef scroll logic
           }
         }}
       >
@@ -189,18 +187,17 @@ function App() {
               setHtml(newValue);
               setError(false);
             }}
-            onMount={(editor) => (editorRef.current = editor)}
+            // Removed onMount for editorRef
           />
           <AskAI
             html={html}
-            setHtml={setHtml} // Still needed for full HTML updates
-            editorRef={editorRef} // Pass the editor ref
+            setHtml={setHtml} // Used for both full and diff updates now
+            // Removed editorRef prop
             isAiWorking={isAiWorking}
             setisAiWorking={setisAiWorking}
             onScrollToBottom={() => {
-              editorRef.current?.revealLine(
-                editorRef.current?.getModel()?.getLineCount() ?? 0
-              );
+              // Consider if scrolling is still needed here, maybe based on html length change?
+              // For now, removing the direct editor scroll.
             }}
           />
         </div>
