@@ -402,30 +402,37 @@ function applyDiffs(originalHtml, aiResponseContent) {
   return currentHtml;
 }
 
-
 // --- Endpoint to Apply Diffs Server-Side ---
 app.post("/api/apply-diffs", (req, res) => {
   const { originalHtml, aiResponseContent } = req.body;
 
-  if (typeof originalHtml !== 'string' || typeof aiResponseContent !== 'string') {
-    return res.status(400).json({ ok: false, message: "Missing or invalid originalHtml or aiResponseContent." });
+  if (
+    typeof originalHtml !== "string" ||
+    typeof aiResponseContent !== "string"
+  ) {
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        message: "Missing or invalid originalHtml or aiResponseContent.",
+      });
   }
 
   try {
     console.log("[Apply Diffs] Received request to apply diffs.");
     const modifiedHtml = applyDiffs(originalHtml, aiResponseContent);
     console.log("[Apply Diffs] Diffs applied successfully.");
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(200).send(modifiedHtml);
   } catch (error) {
     console.error("[Apply Diffs] Error applying diffs:", error);
-    res.status(400).json({ // Use 400 for client-side correctable errors (bad diff format)
+    res.status(400).json({
+      // Use 400 for client-side correctable errors (bad diff format)
       ok: false,
       message: error.message || "Failed to apply AI suggestions.",
     });
   }
 });
-
 
 // --- AI Interaction Route ---
 app.post("/api/ask-ai", async (req, res) => {
@@ -464,7 +471,7 @@ app.post("/api/ask-ai", async (req, res) => {
   }
 
   // --- Define System Prompts ---
-  const initialSystemPrompt = `ONLY USE HTML, CSS AND JAVASCRIPT. If you want to use ICON make sure to import the library first. Try to create the best UI possible by using only HTML, CSS and JAVASCRIPT. Also, try to ellaborate as much as you can, to create something unique. ALWAYS GIVE THE RESPONSE INTO A SINGLE HTML FILE.`;
+  const initialSystemPrompt = `ONLY USE HTML, CSS AND JAVASCRIPT. If you want to use ICON make sure to import the library first. Try to create the best UI possible by using only HTML, CSS and JAVASCRIPT. Also, try to ellaborate as much as you can, to create something unique. If needed you are allowed to use tailwincss (if so make sure to import <script src="https://cdn.tailwindcss.com"></script> in the head). ALWAYS GIVE THE RESPONSE INTO A SINGLE HTML FILE.`;
 
   const followUpSystemPrompt = `You are an expert web developer modifying an existing HTML file.
 The user wants to apply changes based on their request.
