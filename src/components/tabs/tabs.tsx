@@ -18,7 +18,7 @@ function Tabs({ children }: { children?: React.ReactNode }) {
           target="_blank"
           className="text-[12px] text-gray-300 hover:brightness-120 flex items-center gap-1 font-code"
         >
-          Powered by <img src={Deepseek} className="size-5" /> Deepseek
+          Powered by PyThaGo.AI
         </a>
         {children}
       </div>
